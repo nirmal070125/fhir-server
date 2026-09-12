@@ -48,16 +48,58 @@ The response is an OperationOutcome:
 
 Base resource checks protect fundamental structure. Profile validation is deployment-controlled and applies to profiles declared in `meta.profile` when their StructureDefinitions are available.
 
-Two environment variables control the behavior:
+The toggles live in the `validation:` YAML block, and each can be overridden by an environment
+variable (the legacy names in parentheses remain accepted as fallbacks):
 
-| Variable | Default | Effect |
-| --- | --- | --- |
-| `FHIR_BASE_VALIDATION` | `true` | Validates every write against the base R4 StructureDefinition. Set `false` to disable. |
-| `FHIR_VALIDATE_ON_WRITE` | `false` | Set `true` to additionally enforce declared profiles on create and update. |
+| YAML key | Environment variable | Default | Effect |
+| --- | --- | --- | --- |
+| `validation.base` | `FHIR_VALIDATION_BASE` (legacy `FHIR_BASE_VALIDATION`) | `true` | Validates every write against the base R4 StructureDefinition. Set `false` to disable. |
+| `validation.profile` | `FHIR_VALIDATION_PROFILE` (legacy `FHIR_VALIDATE_ON_WRITE`) | `false` | Set `true` to additionally enforce declared profiles on create and update. |
+| `validation.referentialIntegrityOnWrite` | `FHIR_VALIDATION_REFERENTIAL_INTEGRITY_ON_WRITE` | `true` | Rejects writes whose local literal references do not resolve — see below. |
+| `validation.referentialIntegrityOnDelete` | `FHIR_VALIDATION_REFERENTIAL_INTEGRITY_ON_DELETE` | `true` | Rejects deletes of resources that are still referenced — see below. |
 
 :::note
-The default behavior favors FHIR interoperability. Load the required Implementation Guides and set `FHIR_VALIDATE_ON_WRITE=true` when a deployment requires profile enforcement.
+The default behavior favors FHIR interoperability. Load the required Implementation Guides and set `FHIR_VALIDATION_PROFILE=true` when a deployment requires profile enforcement.
 :::
+
+Independent of these toggles, writes always enforce a small set of required fields whose absence
+breaks core workflows — for example `Observation.code`, `Encounter.status` and `Encounter.class`,
+`Condition.subject`, `DiagnosticReport.status` and `DiagnosticReport.code`, and
+`AllergyIntolerance.patient`. A present-but-empty value (`null`, `""`, `{}`, `[]`) counts as
+missing and is rejected with `422 Unprocessable Entity`.
+
+## Referential integrity
+
+At the end of every write transaction — after all entries are flushed, inside the same
+transaction — the store verifies that the resulting database state is referentially consistent:
+
+- **On write** (`validation.referentialIntegrityOnWrite`, default `true`): every local literal
+  reference (`Type/id`) carried by a created, updated, or patched resource must resolve to a
+  live (non-deleted) resource. A violation aborts the transaction with
+  `422 Unprocessable Entity`.
+- **On delete** (`validation.referentialIntegrityOnDelete`, default `true`): a resource cannot
+  be deleted while live resources still reference it through an indexed reference search
+  parameter. A violation aborts the transaction with `409 Conflict`.
+
+Because the checks run after the flush, transaction Bundles are order-independent: a Bundle that
+creates both an Observation and the Patient it points at passes regardless of entry order, and a
+violation rolls the whole Bundle back.
+
+Scope and exemptions:
+
+- Only local literal references are existence-checked. Absolute URLs, `urn:` values, internal
+  fragments (`#contained`), conditional references (`Type?query`), and logical
+  (identifier-only) references are never checked.
+- The delete-side check consults the reference search index (`sp_reference`), so it sees exactly
+  the references indexed by a reference-type SearchParameter.
+- `Bundle`-typed resources (stored documents or collections) are exempt from the write-side
+  check: their entry-local references resolve against the bundle itself, not this server.
+
+`$validate` does not check referential integrity, so a resource can validate clean and still be
+rejected on write. When both checks are enabled, the CapabilityStatement advertises
+`referencePolicy: ["literal", "logical", "enforced"]`. Bulk loads whose data arrives out of
+order (for example Synthea exports imported file by file) may need
+`FHIR_VALIDATION_REFERENTIAL_INTEGRITY_ON_WRITE=false` for the duration of the import.
 
 ## Profile availability
 

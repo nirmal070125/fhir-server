@@ -520,7 +520,7 @@ Holds the core FHIR R4 resource StructureDefinitions (one row per resource type)
 | `GET` | `/{type}/{id}/_history/{vid}` | 200, 400, 404 | Read specific version |
 | `POST` | `/{type}` | 201 | Create resource |
 | `PUT` | `/{type}/{id}` | 200, 201, 400, 404, 412, 422 | Update resource (creates at the given id when missing — update-as-create; 404 only with `If-Match`) |
-| `PATCH` | `/{type}/{id}` | 200, 400, 404 | JSON Merge Patch (RFC 7396) |
+| `PATCH` | `/{type}/{id}` | 200, 400, 404 | JSON Merge Patch, JSON Patch, XML Patch, or FHIR Patch — selected by `Content-Type` |
 | `DELETE` | `/{type}/{id}` | 204, 404 | Soft delete |
 | `GET` | `/{type}` | 200 | Search |
 | `POST` | `/{type}/_search` | 200 | Search (form-encoded body) |
@@ -616,7 +616,14 @@ curl -X PATCH http://localhost:9090/fhir/r4/Patient/550e8400-e29b-41d4-a716-4466
   -d '{"active": true}'
 ```
 
-Uses [JSON Merge Patch (RFC 7396)](https://tools.ietf.org/html/rfc7396): set a key to `null` to delete it. PATCH does not enforce `Content-Type` — a wrong type will fail with 400 when the body cannot be parsed as JSON.
+Four patch formats are supported, selected by `Content-Type`:
+
+| `Content-Type` | Format |
+|---|---|
+| `application/merge-patch+json` (or absent) | [JSON Merge Patch (RFC 7396)](https://tools.ietf.org/html/rfc7396) — set a key to `null` to delete it |
+| `application/json-patch+json` | [JSON Patch (RFC 6902)](https://tools.ietf.org/html/rfc6902) |
+| `application/xml-patch+xml` | XML Patch |
+| `application/fhir+json` (body is `Parameters`) | FHIR Patch |
 
 #### Delete a Resource
 
@@ -666,7 +673,7 @@ The response is a `transaction-response` Bundle whose entries carry
 | `transaction` | All entries commit in a **single DB transaction** | Whole Bundle rolls back; a single `OperationOutcome` is returned with the failing entry's status |
 | `batch` | Each entry runs **independently** | Only that entry fails (its `response` carries an `OperationOutcome`); siblings are unaffected; overall status is `200` |
 
-Supported per-entry methods: `POST`, `PUT`, `PATCH` (JSON Merge Patch), `DELETE`, `GET`.
+Supported per-entry methods: `POST`, `PUT`, `PATCH`, `DELETE`, `GET`.
 
 - **Reference resolution** — within a `transaction`, `urn:uuid:` (and absolute-URL)
   references between entries are rewritten to the server-assigned `Type/id` before
@@ -964,14 +971,14 @@ fails startup, naming the offending variable. See the
 | `token` | `gender=female`, `code=http://loinc.org\|8310-5` | `:missing`, `:in`, `:not-in`, `:below`, `:above` | `system\|code`, `\|code` (any system), `system\|` (any code with that system). The `:in`/`:not-in`/`:below`/`:above` modifiers require an external terminology server — see [Terminology](#11-terminology). |
 | `date` | `birthdate=ge1980`, `date=2024-01-15` | `eq`, `ne`, `lt`, `gt`, `le`, `ge`, `sa`, `eb`, `ap` | `eq` follows R4 containment semantics (the search range must fully contain the stored range); `ne` matches when the search range does not fully contain the stored range; `ap` matches on range overlap; `sa` matches values that start after the search range and `eb` matches values that end before it. Matching is per indexed value, so a resource with multiple values for one param can match both `eq` and `ne` |
 | `number` | `probability=gt0.8` | `eq`, `lt`, `gt` | |
-| `reference` | `subject=Patient/abc123` | — | |
+| `reference` | `subject=Patient/abc123` | `:missing`, `:identifier`, `:{Type}` | Chained parameters (`subject.name=smith`) and `_has` are also supported |
+| `quantity` | `value-quantity=gt5.4` | comparator prefixes (`eq`, `lt`, `gt`, …), `:missing` | Compared on the canonicalized value and units |
+| `uri` | `url=http://example.com/vs` | `:below`, `:above`, `:missing` | `:below` matches by path prefix |
 
-**Not yet queryable** — these types are indexed (rows written to their `sp_*` tables) but the query builder does not read from them:
+**Not yet queryable** — this type is indexed (rows written to its `sp_*` table) but the query builder does not read from it:
 
 | Type | Table | Status |
 |---|---|---|
-| `quantity` | `sp_quantity` | Indexed only |
-| `uri` | `sp_uri` | Indexed only |
 | `special` (Location.near) | `sp_coords` | Indexed only |
 
 Special parameters handled without `sp_*` tables:
@@ -983,7 +990,7 @@ Special parameters handled without `sp_*` tables:
 | `_text` / `_content` | Queries `resources.search_text` tsvector — **not currently functional** (column is never populated) |
 | `_include` | Fetches all forward references for matched resources |
 | `_revinclude` | Fetches all reverse references for matched resources |
-| `_sort` | **Silently ignored** — results always ordered by `last_updated DESC` |
+| `_sort` | Comma-separated sort keys, leading `-` for descending (e.g. `_sort=-_lastUpdated`); when absent, results are ordered by `last_updated DESC` |
 | `_count`, `_page` | Pagination |
 
 ### Registering a custom SearchParameter
@@ -1002,7 +1009,9 @@ curl -X POST http://localhost:9090/fhir/r4/SearchParameter \
   }'
 ```
 
-The parameter is available for searching immediately and persists across restarts.
+The parameter persists across restarts and starts indexing **new writes** immediately. Existing
+resources are not backfilled (there is no `$reindex` operation yet), so resources written before
+the parameter was registered must be re-written (`PUT`) to become findable through it.
 
 ---
 

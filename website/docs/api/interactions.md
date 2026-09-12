@@ -191,8 +191,10 @@ Notes:
 - `If-Match` is optional but recommended — see
   [optimistic locking](./conditional.md#optimistic-locking-with-if-match).
 - A body `id` that disagrees with the URL is rejected with `400 Bad Request`.
-- `PUT` to an id that does not exist returns `404 Not Found`. The server does **not** do
-  update-as-create, and advertises `updateCreate: false`.
+- `PUT` to an id that does not exist **creates** the resource at that id and returns
+  `201 Created` (update-as-create). The server advertises `updateCreate: true`. The one
+  exception: when the request carries an `If-Match` header, a missing resource returns
+  `404 Not Found` instead of being created.
 - `PUT` to a *deleted* id restores the resource at a new version.
 
 ## Patch

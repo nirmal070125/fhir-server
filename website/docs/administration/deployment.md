@@ -53,10 +53,19 @@ The FHIR server handles FHIR resources and tenant-scoped storage. Deploy an API 
 
 ## Timeouts
 
-`SERVER_WRITE_TIMEOUT` bounds the entire handler execution from the HTTP server's perspective. Large transaction Bundles can exceed the default. Measure the largest supported request under expected concurrency, then coordinate the server, proxy, client, and database timeout budgets.
+`SERVER_WRITE_TIMEOUT` is a deadline on the HTTP connection, not on the work: when it expires,
+Go closes the connection but does **not** cancel the handler or its request context — the
+handler runs to completion, so a transaction Bundle may still commit after the client has seen a
+bare `EOF` (not a `504`). Large transaction Bundles can exceed the default. Measure the largest
+supported request under expected concurrency, then coordinate the server, proxy, client, and
+database timeout budgets — and keep the server timeout above the client's, so the client governs
+abandonment.
 
 :::warning
-A client-side EOF during a long transaction Bundle can represent an indeterminate outcome. Reconcile resource state before retrying.
+A client-side `EOF` during a long transaction Bundle is an **indeterminate** outcome: the
+database result is independent of the HTTP result, so the transaction may have committed after
+the connection closed. Reconcile resource state before retrying — an unconditional retry may
+apply the bundle twice.
 :::
 
 ## After bulk loading

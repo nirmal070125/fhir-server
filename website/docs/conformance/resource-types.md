@@ -20,7 +20,7 @@ curl -X POST http://localhost:9090/fhir/r4/Observation \
   -d '{"resourceType": "Observation", "status": "final", "code": {"text": "Heart rate"}}'
 ```
 
-There is no per-type enablement step. Using a type for the first time requires no migration or configuration. By default, each incoming resource is validated against the base R4 StructureDefinition for its type, which the server ships and loads at startup (`FHIR_BASE_VALIDATION=false` disables this).
+There is no per-type enablement step. Using a type for the first time requires no migration or configuration. By default, each incoming resource is validated against the base R4 StructureDefinition for its type, which the server ships and loads at startup (`FHIR_VALIDATION_BASE=false` disables this).
 
 :::tip
 The authoritative list for a running server is its CapabilityStatement: `GET /metadata`. Clients should prefer it over documentation, since deployments may add Implementation Guides and custom SearchParameters.

@@ -29,6 +29,22 @@ Run one service and database while scoping data with a tenant identifier and Pos
 
 No configuration flag is needed: the server always mounts both the bare FHIR base path and the tenant-prefixed routes, and the row-level security policies are part of the standard schema. Requests to the bare path use the default tenant scope; requests under a tenant prefix are scoped to that tenant.
 
+:::danger The database role must NOT be a superuser
+PostgreSQL superusers — and any role with `BYPASSRLS` — ignore Row-Level Security, which
+silently disables tenant isolation. Create a dedicated least-privilege role for the server and
+connect as it:
+
+```sql
+CREATE ROLE fhir_app LOGIN PASSWORD '…';            -- NOT a superuser
+GRANT USAGE ON SCHEMA public TO fhir_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO fhir_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO fhir_app;
+```
+
+Run migrations as the owner/admin role; run the server as `fhir_app`. Single-tenant deployments
+that never use the tenant routes are unaffected either way.
+:::
+
 Tenant-aware routes use:
 
 ```text

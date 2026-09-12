@@ -60,8 +60,8 @@ Each entry reports:
 | `readHistory` | `true` — past versions are readable via [history and vread](./interactions.md) |
 | `conditionalCreate` / `conditionalUpdate` | `true` — see [Conditional operations](./conditional.md) |
 | `conditionalDelete` | `single` — a conditional delete may match at most one resource |
-| `updateCreate` | `false` — `PUT` to an unknown id does not create the resource |
-| `referencePolicy` | `literal`, `logical` — both `Type/id` and identifier-based references are indexed |
+| `updateCreate` | `true` — `PUT` to an unknown id creates the resource (update-as-create) |
+| `referencePolicy` | `literal`, `logical` — both `Type/id` and identifier-based references are indexed — plus `enforced` while referential-integrity checking on write is enabled (the default) |
 | `searchParam` | every parameter available for the type, base plus IG plus custom |
 | `searchInclude` | reference parameters usable as `_include` targets |
 | `searchRevInclude` | parameters usable as `_revinclude` targets |
@@ -78,10 +78,10 @@ curl -sS http://localhost:9090/fhir/r4/metadata \
   "conditionalCreate": true,
   "conditionalUpdate": true,
   "conditionalDelete": "single",
-  "updateCreate": false,
+  "updateCreate": true,
   "versioning": "versioned",
   "readHistory": true,
-  "referencePolicy": ["literal", "logical"]
+  "referencePolicy": ["literal", "logical", "enforced"]
 }
 ```
 

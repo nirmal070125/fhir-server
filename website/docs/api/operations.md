@@ -106,14 +106,17 @@ curl -sS -X POST 'http://localhost:9090/fhir/r4/Patient/$validate?profile=http:/
 
 Behaviour worth knowing:
 
-- The body must be the **resource itself**. A `Parameters` wrapper is not unwrapped: at type level it
-  is rejected as a type mismatch, and at system level the `Parameters` resource is what gets
-  validated. The `mode` parameter (`create`/`update`/`delete`) is not implemented.
+- The body may be the **resource itself** or a `Parameters` envelope whose parameter named
+  `resource` carries it — the envelope is unwrapped at every scope. An envelope without a
+  `resource` parameter is rejected with `400 Bad Request`, except `mode=delete`, which returns
+  a valid outcome without checking anything (deletes carry no resource to validate). Other
+  `mode` values do not change what is validated.
 - Only the first `?profile=` value is read.
 - Profile resolution is **soft-fail**: a profile that is not loaded is skipped silently, so an
   unrecognised `?profile=` returns `200 OK` rather than an error. Confirm packages loaded with
   [`/metadata`](./capability-statement.md).
-- Base R4 validation is included unless `FHIR_BASE_VALIDATION=false`. FHIRPath `invariant` failures
+- Base R4 validation is included unless `FHIR_VALIDATION_BASE=false` (the legacy name
+  `FHIR_BASE_VALIDATION` is still honored). FHIRPath `invariant` failures
   are reported as warnings — see [Validation](../conformance/validation.md).
 
 ## $everything
